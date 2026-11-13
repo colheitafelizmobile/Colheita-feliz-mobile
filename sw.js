@@ -1,76 +1,49 @@
-// Colheita Feliz - Service Worker
-// Mude VERSION quando quiser forçar a limpeza total do cache antigo.
-const VERSION = '2026-11-12-1';
-const CACHE = 'colheita-feliz-' + VERSION;
-const PRECACHE = ['./', 'index.html', 'manifest.json', 'apple-touch-icon.png'];
-const NETWORK_TIMEOUT = 8000; // ms esperando a rede antes de usar o cache
+// Service worker do Colheita Feliz
+// Para publicar uma atualização, aumente o número em CACHE_VERSION.
+const CACHE_VERSION = 'v1';
+const CACHE_NAME = 'colheita-feliz-' + CACHE_VERSION;
+const ARQUIVOS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-512-maskable.png'
+];
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE).then((cache) =>
-      Promise.allSettled(PRECACHE.map((url) =>
-        fetch(url, { cache: 'reload' }).then((res) => {
-          if (res.ok) return cache.put(url, res);
-        })
-      ))
-    )
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((c) => c.addAll(ARQUIVOS))
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((nomes) => Promise.all(
+        nomes.filter((n) => n.startsWith('colheita-feliz-') && n !== CACHE_NAME)
+             .map((n) => caches.delete(n))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
-function isPage(request, url) {
-  return request.mode === 'navigate' ||
-    url.pathname.endsWith('/') ||
-    url.pathname.endsWith('/index.html');
-}
-
-// Rede primeiro (sempre revalida com o servidor), cache só se estiver offline/lento
-function networkFirst(event) {
-  const request = event.request;
-  const key = new URL(request.url).pathname.endsWith('/') || request.mode === 'navigate' ? 'index.html' : request;
-  const fromNetwork = fetch(request, { cache: 'no-cache' }).then((res) => {
-    if (res && res.ok) {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(key, copy));
-    }
-    return res;
-  });
-  event.waitUntil(fromNetwork.catch(() => {}));
-  const timeout = new Promise((resolve) => setTimeout(resolve, NETWORK_TIMEOUT, null));
-  return Promise.race([fromNetwork, timeout])
-    .then((res) => res || caches.match(key, { ignoreSearch: true }).then((c) => c || fromNetwork))
-    .catch(() => caches.match(key, { ignoreSearch: true }));
-}
-
-// Outros arquivos (manifest, ícones): usa cache e atualiza em segundo plano
-function staleWhileRevalidate(event) {
-  const request = event.request;
-  return caches.match(request).then((cached) => {
-    const fresh = fetch(request, { cache: 'no-cache' }).then((res) => {
-      if (res && res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(request, copy));
-      }
-      return res;
-    });
-    event.waitUntil(fresh.catch(() => {}));
-    return cached || fresh;
-  });
-}
-
-self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  if (request.method !== 'GET') return;
-  const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
-  if (url.pathname.endsWith('/sw.js')) return;
-  event.respondWith(isPage(request, url) ? networkFirst(event) : staleWhileRevalidate(event));
+// Rede primeiro (pega sempre a versão nova); se estiver offline, usa o cache.
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  e.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copia = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copia));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+  );
 });

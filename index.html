@@ -2487,6 +2487,16 @@ MISSION_POOL.forEach(m=>{let st=m.stages[0];if(st&&st.seed!==undefined&&(st.type
   MISSION_POOL.push({e:PN[s][0],n:PN[s][1],unlock:u,stages:stages});
  });
 })();
+// v4: XP de todas as missões existentes reduzido à metade (arredondado, mínimo 1)
+MISSION_POOL.forEach(m=>m.stages.forEach(st=>{st.xp=Math.max(1,Math.round(st.xp/2));}));
+// v4: missões para os níveis 5, 7 e 12 (já com XP reduzido); adicionadas no fim para não mudar os índices salvos
+MISSION_POOL.push(
+{e:'🍓',n:'Cesta de Morangos',unlock:5,stages:[{type:'seed',seed:1,t:10,label:'Plante 10 morangos',g:100,xp:25},{type:'harv',seed:1,t:8,label:'Colha 8 morangos',g:150,xp:30},{type:'sell',seed:1,t:8,label:'Venda 8 morangos na tenda',g:200,xp:40}]},
+{e:'🍏',n:'Pomar Iniciante',unlock:7,stages:[{type:'seed',seed:3,t:8,label:'Plante 8 maçãs',g:100,xp:25},{type:'harv',seed:3,t:8,label:'Colha 8 maçãs',g:150,xp:30},{type:'sell',seed:3,t:8,label:'Venda 8 maçãs na tenda',g:200,xp:40}]},
+{e:'🍇',n:'Vinhedo',unlock:12,stages:[{type:'seed',seed:2,t:15,label:'Plante 15 uvas',g:200,xp:40},{type:'harv',seed:2,t:10,label:'Colha 10 uvas',g:250,xp:50},{type:'sell',seed:2,t:10,label:'Venda 10 uvas na tenda',g:300,xp:60}]}
+);
+// v5: moedas verdes das missões reduzidas à metade (arredondado, mínimo 1 quando houver recompensa)
+MISSION_POOL.forEach(m=>m.stages.forEach(st=>{if(st.g)st.g=Math.max(1,Math.round(st.g/2));}));
 
 let mstats={dogBought:0,dogFed:0,henFed:0},missionBaseX={};
 function missionDef(i){return MISSION_POOL[i];}

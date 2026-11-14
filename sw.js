@@ -1,52 +1,68 @@
-/* Colheita Feliz - Service Worker
-   Dica: ao publicar uma versão nova, troque o número em CACHE (ex.: v7) para limpar o cache antigo. */
-const CACHE = 'colheita-feliz-v6';
-const CORE = ['./', './index.html', './manifest.json', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
+// Service worker - Colheita Feliz
+// Estratégia: sempre tenta a rede primeiro (para receber atualizações do GitHub Pages)
+// e usa o cache como reserva quando estiver offline.
+
+const CACHE_NAME = 'colheita-feliz-v2';
+
+// Arquivos que serão guardados no cache na instalação.
+// Caminhos relativos para funcionar em qualquer pasta do GitHub Pages.
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-192.png',
+  './apple-touch-icon.png'
+];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => Promise.allSettled(CORE.map((url) => cache.add(new Request(url, { cache: 'reload' })))))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cada arquivo é adicionado separadamente: se um faltar, os outros continuam sendo guardados.
+      Promise.all(ASSETS.map((url) => cache.add(url).catch(() => {})))
+    )
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+      await self.clients.claim();
+    })()
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+
+  // Só trata requisições GET do próprio site (ignora APIs e domínios externos).
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  const isPage = req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
-
-  if (isPage) {
-    // Página do jogo: tenta a rede primeiro (pega atualização), cai pro cache se estiver offline
-    event.respondWith(
-      fetch(req, { cache: 'no-cache' })
-        .then((res) => {
-          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put('./index.html', copy)); }
-          return res;
-        })
-        .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
-    );
-    return;
-  }
-
-  // Demais arquivos (ícones, manifest): cache primeiro e atualiza em segundo plano
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req)
-        .then((res) => { if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
-        .catch(() => cached);
-      return cached || net;
-    })
+    (async () => {
+      try {
+        const networkResponse = await fetch(req);
+        if (networkResponse && networkResponse.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, networkResponse.clone());
+        }
+        return networkResponse;
+      } catch (err) {
+        // Sem internet: tenta o cache.
+        const cached = await caches.match(req, { ignoreSearch: true });
+        if (cached) return cached;
+
+        // Navegação sem cache específico: devolve a página principal.
+        if (req.mode === 'navigate') {
+          const index = await caches.match('./index.html');
+          if (index) return index;
+        }
+        return Response.error();
+      }
+    })()
   );
 });

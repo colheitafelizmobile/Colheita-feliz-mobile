@@ -19,88 +19,6 @@ if('serviceWorker' in navigator){
   });
 }
 </script><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#78c850;display:flex;justify-content:center;align-items:center;min-height:100vh;min-height:100dvh;overflow:hidden;font-family:Arial,sans-serif;touch-action:none}#wrap{position:relative;width:720px;height:1280px;max-width:100vw;max-height:100dvh;aspect-ratio:720/1280}canvas{width:100%;height:100%;display:block}@media(max-width:760px){#wrap{width:100vw;height:100dvh}}</style></head><body><div id="wrap"><canvas id="game" width="720" height="1280"></canvas></div><script>
-// ===== v6: SONS do jogo (sintetizados com Web Audio, sem arquivos externos) =====
-let _ac=null,_master=null,_sfxBus=null,_amb=null,_ambOn=false,_birdAt=0;
-function _ctx(){
- if(_ac)return _ac;
- try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
-  _ac=new AC();_master=_ac.createGain();_master.gain.value=0.7;_master.connect(_ac.destination);
-  _sfxBus=_ac.createGain();_sfxBus.gain.value=0.9;_sfxBus.connect(_master);
- }catch(e){_ac=null;}
- return _ac;
-}
-// chamado no primeiro toque: navegadores móveis só liberam o áudio após um gesto do usuário
-function sfxUnlock(){const c=_ctx();if(c&&c.state==='suspended')c.resume().catch(()=>{});}
-function _sfxOn(){return typeof som==='undefined'||!!som;}
-function _tone(freq,type,t0,dur,vol,slideTo){
- const c=_ctx();if(!c)return;
- const o=c.createOscillator(),g=c.createGain();
- o.type=type;o.frequency.setValueAtTime(freq,t0);
- if(slideTo)o.frequency.exponentialRampToValueAtTime(slideTo,t0+dur);
- g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(vol,t0+0.01);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
- o.connect(g);g.connect(_sfxBus);o.start(t0);o.stop(t0+dur+0.05);
-}
-function _noiseBuf(dur){
- const c=_ctx();const n=Math.floor(c.sampleRate*dur);
- const b=c.createBuffer(1,n,c.sampleRate);const d=b.getChannelData(0);
- for(let i=0;i<n;i++)d[i]=Math.random()*2-1;
- return b;
-}
-function _noise(t0,dur,vol,type,f0,f1){
- const c=_ctx();if(!c)return;
- const s=c.createBufferSource();s.buffer=_noiseBuf(dur);
- const flt=c.createBiquadFilter();flt.type=type;flt.frequency.setValueAtTime(f0,t0);
- if(f1)flt.frequency.exponentialRampToValueAtTime(f1,t0+dur);
- const g=c.createGain();g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(vol,t0+dur*0.2);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
- s.connect(flt);flt.connect(g);g.connect(_sfxBus);s.start(t0);s.stop(t0+dur+0.05);
-}
-// clique curto e seco para botões e toques
-function sfxClick(){if(!_sfxOn()||!_ctx())return;const t=_ac.currentTime;_tone(1400,'square',t,0.05,0.07,700);}
-// terra sendo cavada/semente caindo: ruído grave + pancada suave
-function sfxPlant(){if(!_sfxOn()||!_ctx())return;const t=_ac.currentTime;_noise(t,0.16,0.45,'lowpass',900,300);_tone(220,'sine',t,0.12,0.25,140);}
-// regar: chiado de água com gotinhas
-function sfxWater(){
- if(!_sfxOn()||!_ctx())return;const t=_ac.currentTime;
- _noise(t,0.5,0.3,'bandpass',1800,3400);
- for(let k=0;k<4;k++)_tone(1800+Math.random()*1200,'sine',t+0.12+k*0.09+Math.random()*0.03,0.08,0.10,2400);
-}
-// colheita: arpejo alegre de 4 notas
-function sfxHarvest(){if(!_sfxOn()||!_ctx())return;const t=_ac.currentTime;[523,659,784,1047].forEach((f,i)=>_tone(f,'triangle',t+i*0.09,0.22,0.22));}
-// canto de passarinho (usado pelo ambiente)
-function _chirp(){
- const c=_ctx();const t=c.currentTime;const n=2+Math.floor(Math.random()*3);
- const base=2000+Math.random()*1200;
- for(let k=0;k<n;k++)_tone(base+k*120,'sine',t+k*0.12,0.1,0.06,base+k*120+(Math.random()<0.5?300:-200));
-}
-// ambiente: vento contínuo suave com variação lenta + pássaros de tempos em tempos
-function _ambStart(){
- const c=_ctx();if(!c||_ambOn)return;_ambOn=true;
- const s=c.createBufferSource();s.buffer=_noiseBuf(4);s.loop=true;
- const flt=c.createBiquadFilter();flt.type='lowpass';flt.frequency.value=600;
- const g=c.createGain();g.gain.value=0.05;
- const lfo=c.createOscillator();lfo.frequency.value=0.07;
- const lg=c.createGain();lg.gain.value=0.025;
- lfo.connect(lg);lg.connect(g.gain);
- s.connect(flt);flt.connect(g);g.connect(_sfxBus);
- s.start();lfo.start();
- _amb={s,lfo};
- _birdAt=c.currentTime+2;
-}
-function _ambStop(){
- if(!_ambOn)return;_ambOn=false;
- try{_amb.s.stop();_amb.lfo.stop();}catch(e){}
- _amb=null;
-}
-// chamado a cada quadro: liga o ambiente só no jogo (JOGANDO) e com o som ligado
-function sfxUpdate(){
- const c=_ctx();if(!c)return;
- const want=state==='JOGANDO'&&_sfxOn()&&!document.hidden;
- if(!want){_ambStop();return;}
- if(c.state==='suspended')return; // espera o primeiro toque liberar o áudio
- if(!_ambOn)_ambStart();
- if(c.currentTime>_birdAt){_chirp();_birdAt=c.currentTime+3+Math.random()*4;}
-}
-document.addEventListener('visibilitychange',()=>{if(document.hidden)_ambStop();});
 let _hidAt=null,_lastFrameT=null,_frameMs=0,_autoSaveTimer=null;
 function growthAdvance(ms){if(ms<=0)return;for(const pl of plots){if(pl.state!=='growing')continue;pl.pct+=ms/(growTime(pl.seed)*1000)*100;if(pl.pct>=100){pl.pct=100;pl.state='ready';}}}
 function onHide(){if(_hidAt===null){_hidAt=Date.now();}}
@@ -1596,7 +1514,7 @@ function clickPlot(i){
  if(pl.state==='empty'&&toolIdx===0){pl.state='dug';pl.stage=1;toolMsg=_t('Covinha cavada! Toque nela para plantar 🌱');toolMsgTime=Date.now();return;}
  if(pl.state==='empty'){toolMsg=_t('Use a 🪏 para cavar esta covinha!');toolMsgTime=Date.now();return;}
  if(pl.state==='dug'){plantBubbleHit=false;seedPicker=i;toolMsg=_t('Escolha a semente para plantar');toolMsgTime=Date.now();return;}
- if(pl.state==='dry'){waterBubbleHit=false;pl.state='growing';pl.watered=true;pl.stage=2;sfxWater();gainXP(5);toolMsg=_t('💦 Regado! +5 XP • Agora vai crescer 🌱');toolMsgTime=Date.now();return;}
+ if(pl.state==='dry'){waterBubbleHit=false;pl.state='growing';pl.watered=true;pl.stage=2;gainXP(5);toolMsg=_t('💦 Regado! +5 XP • Agora vai crescer 🌱');toolMsgTime=Date.now();return;}
  
  if(pl.state==='ready'){carrotBubbleHit=false;harvestPlot(i);return;}
  
@@ -1604,7 +1522,7 @@ function clickPlot(i){
  if(pl.state==='weed'){pestBubbleHit=false;pl.state='growing';gainXP(10);tcount('weed');toolMsg=_t('🧪 Erva eliminada! +10 XP');toolMsgTime=Date.now();return;}
  if(pl.state==='growing'){if(fertQty[0]>0||fertQty[1]>0){fertPopup={plot:i};toolMsg=_t('🌿 Toque no fertilizante para acelerar!');}else{toolMsg=_t('Crescendo... ')+Math.floor(pl.pct)+_t('% 🌱 • Compre fertilizante na loja!');}toolMsgTime=Date.now();return;}
 }
-function plantSeed(seedIdx){let pl=plots[seedPicker];let s=SEEDS[seedIdx];if(level<seedNeed(seedIdx)){toolMsg='🔒 '+s.n+_t(' desbloqueia no Nv ')+seedNeed(seedIdx)+'!';toolMsgTime=Date.now();seedPicker=-1;return;}if(seedQty[seedIdx]>0){seedQty[seedIdx]--;}else{toolMsg=_t('Sem ')+s.n+' no inventário! Compre sementes na loja 🛒';toolMsgTime=Date.now();seedPicker=-1;return;}pl.seed=seedIdx;pl.state='dry';pl.pct=0;pl.pestChecked=false;pl.stage=1;stats.planted++;gainXP(5);plantedBySeed[seedIdx]=(plantedBySeed[seedIdx]||0)+1;pl.watered=false;seedPicker=-1;sfxPlant();toolMsg='Plantou '+s.n+' '+s.e+'! +5 XP • Agora regue com 💦';toolMsgTime=Date.now();}
+function plantSeed(seedIdx){let pl=plots[seedPicker];let s=SEEDS[seedIdx];if(level<seedNeed(seedIdx)){toolMsg='🔒 '+s.n+_t(' desbloqueia no Nv ')+seedNeed(seedIdx)+'!';toolMsgTime=Date.now();seedPicker=-1;return;}if(seedQty[seedIdx]>0){seedQty[seedIdx]--;}else{toolMsg=_t('Sem ')+s.n+' no inventário! Compre sementes na loja 🛒';toolMsgTime=Date.now();seedPicker=-1;return;}pl.seed=seedIdx;pl.state='dry';pl.pct=0;pl.pestChecked=false;pl.stage=1;stats.planted++;gainXP(5);plantedBySeed[seedIdx]=(plantedBySeed[seedIdx]||0)+1;pl.watered=false;seedPicker=-1;toolMsg='Plantou '+s.n+' '+s.e+'! +5 XP • Agora regue com 💦';toolMsgTime=Date.now();}
 
 function useFert(i){if(i===0){plots.forEach(pl=>{if(pl.state==='growing')pl.pct=Math.min(99,pl.pct+30);});toolMsg=_t('🌿 Fertilizante! Crescimento +30%');}else if(i===1){bonusUntil=Date.now()+15000;toolMsg=_t('⚡ Adubo Turbo! Pontos em dobro por 15s');}else{plots.forEach(pl=>{if(pl.state==='pest'||pl.state==='weed')pl.state='growing';});toolMsg=_t('🧹 Pragas e ervas limpas!');}toolMsgTime=Date.now();}
 function hitPanelClose(x,y){return x>=620&&x<=664&&y>=390&&y<=434;}
@@ -1920,7 +1838,7 @@ function hitPlantBubble(x,y){plantBubbleHit=false;for(let i=0;i<plots.length;i++
 let carrotBubbleHit=false;let waterBubbleHit=false;
 function hitCarrotBubble(x,y){carrotBubbleHit=false;for(let i=0;i<plots.length;i++){let pl=plots[i];if(pl.state!=='ready'||(pl.seed!==0&&pl.seed!==1&&pl.seed!==2&&pl.seed!==3&&pl.seed!==4&&pl.seed!==5&&pl.seed!==6&&pl.seed!==7&&pl.seed!==8&&pl.seed!==9&&pl.seed!==10&&pl.seed!==11))continue;let pp=carrotBubblePos(pl);let dx=x-pp.x,dy=y-pp.y;if(dx*dx+dy*dy<=30*30){carrotBubbleHit=true;return i;}}return -1;}
 function hitWaterBubble(x,y){waterBubbleHit=false;for(let i=0;i<plots.length;i++){let pl=plots[i];if(pl.state!=='dry'||(pl.seed!==0&&pl.seed!==1&&pl.seed!==2&&pl.seed!==3&&pl.seed!==4&&pl.seed!==5&&pl.seed!==6&&pl.seed!==7&&pl.seed!==8&&pl.seed!==9&&pl.seed!==10&&pl.seed!==11))continue;let pp=carrotBubblePos(pl);let dx=x-pp.x,dy=y-pp.y;if(dx*dx+dy*dy<=30*30){waterBubbleHit=true;return i;}}return -1;}
-function harvestPlot(i){sfxHarvest();let pl=plots[i];let s=SEEDS[pl.seed];let pts=s.pts*2;if(Date.now()<bonusUntil)pts*=2;score+=pts;if(pl.red){redCropQty[pl.seed]++;mCount('redHarv',pl.seed,1);gainXP(s.xp*4);}else{cropQty[pl.seed]++;gainXP(s.xp);}stats.harvested++;trophyBump(trophyStats.harv,pl.seed,s.n,s.e);for(let k=0;k<14;k++)particulas.push({x:pl.x+100,y:pl.y+30,vx:Math.random()*6-3,vy:Math.random()*6-3,life:20,tipo:0});pl.state='empty';pl.stage=0;pl.pct=0;toolMsg=_t('Colheu ')+s.n+_t('! +')+pts+_t(' pts e +1 ')+s.e+_t(' para a tenda 🏪')+(pl.red?_t(' ⭐ +')+(s.xp*4)+_t(' XP (Terra Vermelha)'):'');toolMsgTime=Date.now();}
+function harvestPlot(i){let pl=plots[i];let s=SEEDS[pl.seed];let pts=s.pts*2;if(Date.now()<bonusUntil)pts*=2;score+=pts;if(pl.red){redCropQty[pl.seed]++;mCount('redHarv',pl.seed,1);gainXP(s.xp*4);}else{cropQty[pl.seed]++;gainXP(s.xp);}stats.harvested++;trophyBump(trophyStats.harv,pl.seed,s.n,s.e);for(let k=0;k<14;k++)particulas.push({x:pl.x+100,y:pl.y+30,vx:Math.random()*6-3,vy:Math.random()*6-3,life:20,tipo:0});pl.state='empty';pl.stage=0;pl.pct=0;toolMsg=_t('Colheu ')+s.n+_t('! +')+pts+_t(' pts e +1 ')+s.e+_t(' para a tenda 🏪')+(pl.red?_t(' ⭐ +')+(s.xp*4)+_t(' XP (Terra Vermelha)'):'');toolMsgTime=Date.now();}
 
 // ===== v2: 12 plantas novas (desenho no terreno) e paginador da loja =====
 const SEED_PAGES=Math.ceil(SEEDS.length/12);let shopSeedPage=0;
@@ -3833,7 +3751,7 @@ function drawJuiceShopCard(){
 }
 Object.assign(I18N,{'Espere terminar o suco para guardar':['Wait for the juice to finish before storing','Espera a que termine el jugo para guardar'],'📦 Máquina de Sucos guardada! Para colocar de volta: 🎒 > Máquina':['📦 Juice Machine stored! To place it again: 🎒 > Machine','📦 ¡Máquina de Jugos guardada! Para volver a colocarla: 🎒 > Máquina'],'📍 Toque na fazenda para colocar a máquina de sucos':['📍 Tap the farm to place the juice machine','📍 Toca la granja para colocar la máquina de jugos'],'Você já tem a Máquina de Sucos':['You already have the Juice Machine','Ya tienes la Máquina de Jugos'],'🔒 Máquina de Sucos libera no Nv ':['🔒 Juice Machine unlocks at Lv ','🔒 La Máquina de Jugos se desbloquea en el Nv '],'🧃 Máquina de Sucos colocada! Toque nela para espremer.':['🧃 Juice Machine placed! Tap it to squeeze.','🧃 ¡Máquina de Jugos colocada! Tócala para exprimir.'],'A máquina de sucos já está ocupada':['The juice machine is busy','La máquina de jugos está ocupada'],'Faltam frutas: precisa de ':['Not enough fruit: need ','Faltan frutas: necesitas '],'🧃 Espremendo ':['🧃 Squeezing ','🧃 Exprimiendo '],'🧃 Máquina de Sucos':['🧃 Juice Machine','🧃 Máquina de Jugos'],'Cada suco usa ':['Each juice uses ','Cada jugo usa '],' frutas colhidas':[' harvested fruits',' frutas cosechadas'],'Precisa: ':['Needs: ','Necesita: '],'Fazendo ':['Making ','Haciendo '],'Faltam frutas':['Need fruit','Faltan frutas'],'Página ':['Page ','Página ']});
 
-function loop(){sfxUpdate();{const _n=performance.now();_frameMs=(_lastFrameT!==null&&_hidAt===null)?Math.min(_n-_lastFrameT,250):0;_lastFrameT=_n;}try{if(!byeModal)update();grillTick();sewTick();juiceTick();draw();drawBye();drawCalBtn();drawDaily();drawGrill();drawGrillPopup();drawSew();drawSewPopup();drawJuice();drawJuicePopup();}catch(err){console.error(err);ctx.fillStyle='#78c850';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.fillText(_t('Toque para continuar'),W/2,H/2);ctx.font='bold 14px Arial';ctx.fillStyle='#300';ctx.fillText(_t('Erro: ')+(err&&err.message),W/2,H/2+40);}requestAnimationFrame(loop);}
+function loop(){{const _n=performance.now();_frameMs=(_lastFrameT!==null&&_hidAt===null)?Math.min(_n-_lastFrameT,250):0;_lastFrameT=_n;}try{if(!byeModal)update();grillTick();sewTick();juiceTick();draw();drawBye();drawCalBtn();drawDaily();drawGrill();drawGrillPopup();drawSew();drawSewPopup();drawJuice();drawJuicePopup();}catch(err){console.error(err);ctx.fillStyle='#78c850';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.fillText(_t('Toque para continuar'),W/2,H/2);ctx.font='bold 14px Arial';ctx.fillStyle='#300';ctx.fillText(_t('Erro: ')+(err&&err.message),W/2,H/2+40);}requestAnimationFrame(loop);}
 (function(){const _ol=loadGame;loadGame=function(){if(dailyModal)return true;return _ol();};const _or=resetGame;resetGame=function(){if(dailyModal)return;_or();grillOwned=false;grillStored=false;grillPos=null;grillQty=[0,0,0,0];grillJob=null;grillPlacing=false;grillPopup=false;sewOwned=false;sewStored=false;sewPos=null;sewQty=[0,0,0,0,0];sewJob=null;sewPlacing=false;sewPopup=false;juiceOwned=false;juiceStored=false;juicePos=null;juiceQty=new Array(17).fill(0);juiceJob=null;juicePlacing=false;juicePopup=false;juicePage=0;};})();
 loop();
 canvas.addEventListener('wheel',e=>{if(state==='JOGANDO'&&invOpen){e.preventDefault();invScroll=Math.max(0,Math.min(invMax(invAll().length),invScroll+e.deltaY));invPop=null;}},{passive:false});
@@ -3847,7 +3765,7 @@ else if(state==='JOGANDO'){if(e.key==='p'||e.key==='P')state='PAUSADO';if(e.key=
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
 function getPos(e){let r=canvas.getBoundingClientRect();let t=e.touches[0]||e.changedTouches[0];return{x:(t.clientX-r.left)*(W/r.width),y:(t.clientY-r.top)*(H/r.height)};}
-canvas.addEventListener('touchstart',e=>{sfxUnlock();sfxClick();e.preventDefault();let p=getPos(e);touchX=p.x;touchY=p.y;touching=true;if(dailyModal){const _dt=dailyTap(p.x,p.y);if(_dt==='claim')claimDaily();else if(_dt==='close')dailyModal=null;touching=false;return;}if(state==='JOGANDO'&&!grillPopup&&!sewPopup&&!juicePopup&&!anyModalOpen()&&!levelUpModal&&inR(p.x,p.y,calBtnRect())){dailyOpen();touching=false;return;}
+canvas.addEventListener('touchstart',e=>{e.preventDefault();let p=getPos(e);touchX=p.x;touchY=p.y;touching=true;if(dailyModal){const _dt=dailyTap(p.x,p.y);if(_dt==='claim')claimDaily();else if(_dt==='close')dailyModal=null;touching=false;return;}if(state==='JOGANDO'&&!grillPopup&&!sewPopup&&!juicePopup&&!anyModalOpen()&&!levelUpModal&&inR(p.x,p.y,calBtnRect())){dailyOpen();touching=false;return;}
 if(juicePopup){juicePopupTap(p.x,p.y);touching=false;return;}
 if(sewPopup){sewPopupTap(p.x,p.y);touching=false;return;}
 if(grillPopup){grillPopupTap(p.x,p.y);touching=false;return;}
@@ -3867,7 +3785,7 @@ canvas.addEventListener('wheel',e=>{if(state==='JOGANDO'&&trophyOpen){e.preventD
 canvas.addEventListener('wheel',e=>{if(state==='JOGANDO'&&missionsOpen){e.preventDefault();missionScroll=Math.max(0,Math.min(missionMaxScroll(),missionScroll+e.deltaY));}},{passive:false});
 canvas.addEventListener('touchmove',e=>{e.preventDefault();let p=getPos(e);touchX=p.x;touchY=p.y;invDragMove(p.y);if(state==='JOGANDO'&&missionsOpen&&missionDragging){missionScroll=Math.max(0,Math.min(missionMaxScroll(),missionDragStart-(p.y-missionDragY)));if(Math.abs(p.y-missionDragY)>10)missionDragged=true;}if(state==='JOGANDO'&&trophyOpen&&trophyDragging){trophyScroll=Math.max(0,Math.min(trophyMaxScroll(),trophyDragStart-(p.y-trophyDragY)));}},{passive:false});
 canvas.addEventListener('touchend',()=>{touching=false;invDragEnd();trophyDragging=false;if(state==='JOGANDO'&&missionsOpen&&missionDragging){let wasDragged=missionDragged;missionDragging=false;missionDragY=0;if(!wasDragged){let mi=hitMission(touchX,touchY);if(mi>=0)claimMission(mi);}}});
-canvas.addEventListener('mousedown',e=>{sfxUnlock();sfxClick();let r=canvas.getBoundingClientRect();let x=(e.clientX-r.left)*(W/r.width),y=(e.clientY-r.top)*(H/r.height);
+canvas.addEventListener('mousedown',e=>{let r=canvas.getBoundingClientRect();let x=(e.clientX-r.left)*(W/r.width),y=(e.clientY-r.top)*(H/r.height);
 if(dailyModal){const _dt=dailyTap(x,y);if(_dt==='claim')claimDaily();else if(_dt==='close')dailyModal=null;return;}
 if(state==='JOGANDO'&&!grillPopup&&!sewPopup&&!juicePopup&&!anyModalOpen()&&!levelUpModal&&inR(x,y,calBtnRect())){dailyOpen();return;}
 if(juicePopup){juicePopupTap(x,y);return;}

@@ -2,7 +2,7 @@
 // Estratégia: sempre tenta a rede primeiro (para receber atualizações do GitHub Pages)
 // e usa o cache como reserva quando estiver offline.
 
-const CACHE_NAME = 'colheita-feliz-v2';
+const CACHE_NAME = 'colheita-feliz-v3';
 
 // Arquivos que serão guardados no cache na instalação.
 // Caminhos relativos para funcionar em qualquer pasta do GitHub Pages.
